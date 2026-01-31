@@ -1,35 +1,105 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
 
 type StyleMode = 'minimalism' | 'geometry' | 'typography';
+
+interface PortfolioItem {
+  id: number;
+  title: string;
+  category: StyleMode;
+  image_url: string;
+  description?: string;
+}
 
 const Index = () => {
   const [activeSection, setActiveSection] = useState('home');
   const [styleMode, setStyleMode] = useState<StyleMode>('minimalism');
+  const [portfolioItems, setPortfolioItems] = useState<PortfolioItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const { toast } = useToast();
 
-  const portfolioItems = [
-    {
-      id: 1,
-      title: 'Геометрическая абстракция',
-      category: 'geometry',
-      image: 'https://cdn.poehali.dev/projects/6afcdbf3-af87-4a71-a3d4-a7dc82d54861/files/11188621-9184-4547-a662-0ccd591e93a9.jpg',
-    },
-    {
-      id: 2,
-      title: 'Типографический постер',
-      category: 'typography',
-      image: 'https://cdn.poehali.dev/projects/6afcdbf3-af87-4a71-a3d4-a7dc82d54861/files/3be33097-f134-4179-9ec3-bf21ed24d3ec.jpg',
-    },
-    {
-      id: 3,
-      title: 'Минималистичный паттерн',
-      category: 'minimalism',
-      image: 'https://cdn.poehali.dev/projects/6afcdbf3-af87-4a71-a3d4-a7dc82d54861/files/8175d101-ca1d-4a49-9991-4e1cc819f018.jpg',
-    },
-  ];
+  const [uploadForm, setUploadForm] = useState({
+    title: '',
+    category: 'minimalism' as StyleMode,
+    description: '',
+    image: ''
+  });
+
+  const BACKEND_URL = 'https://functions.poehali.dev/f97add4b-c311-47d0-b1a0-ded0bd2855ed';
+
+  useEffect(() => {
+    loadPortfolio();
+  }, []);
+
+  const loadPortfolio = async () => {
+    try {
+      const response = await fetch(BACKEND_URL);
+      const data = await response.json();
+      setPortfolioItems(data);
+    } catch (error) {
+      console.error('Failed to load portfolio:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setUploadForm({ ...uploadForm, image: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!uploadForm.title || !uploadForm.image) {
+      toast({ title: 'Ошибка', description: 'Заполните название и загрузите изображение', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const response = await fetch(BACKEND_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(uploadForm)
+      });
+
+      if (response.ok) {
+        toast({ title: 'Успешно!', description: 'Работа добавлена в портфолио' });
+        setShowUploadDialog(false);
+        setUploadForm({ title: '', category: 'minimalism', description: '', image: '' });
+        loadPortfolio();
+      }
+    } catch (error) {
+      toast({ title: 'Ошибка', description: 'Не удалось загрузить работу', variant: 'destructive' });
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}?id=${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        toast({ title: 'Удалено', description: 'Работа удалена из портфолио' });
+        loadPortfolio();
+      }
+    } catch (error) {
+      toast({ title: 'Ошибка', description: 'Не удалось удалить работу', variant: 'destructive' });
+    }
+  };
 
   const services = [
     { icon: 'Palette', title: 'Брендинг', description: 'Создание уникальных визуальных решений' },
@@ -55,6 +125,8 @@ const Index = () => {
     }
   };
 
+  const filteredItems = portfolioItems.filter(item => item.category === styleMode);
+
   return (
     <div className={`min-h-screen ${getStyleClass()} transition-all duration-700`}>
       <nav className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/10">
@@ -78,8 +150,13 @@ const Index = () => {
                 </button>
               ))}
             </div>
-            <Button variant="ghost" className="md:hidden">
-              <Icon name="Menu" size={24} />
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => setIsAdminMode(!isAdminMode)}
+              className={isAdminMode ? 'bg-primary/20' : ''}
+            >
+              <Icon name="Settings" size={20} />
             </Button>
           </div>
         </div>
@@ -99,11 +176,20 @@ const Index = () => {
                 Трансформирую идеи в запоминающийся дизайн. Минимализм, геометрия и типографика — мои инструменты.
               </p>
               <div className="flex gap-4 justify-center flex-wrap">
-                <Button size="lg" className="glass-strong hover:scale-105 transition-transform">
+                <Button 
+                  size="lg" 
+                  className="glass-strong hover:scale-105 transition-transform"
+                  onClick={() => setActiveSection('gallery')}
+                >
                   <Icon name="Briefcase" size={20} className="mr-2" />
                   Смотреть работы
                 </Button>
-                <Button size="lg" variant="outline" className="glass hover:glass-strong transition-all">
+                <Button 
+                  size="lg" 
+                  variant="outline" 
+                  className="glass hover:glass-strong transition-all"
+                  onClick={() => setActiveSection('contact')}
+                >
                   <Icon name="Mail" size={20} className="mr-2" />
                   Связаться
                 </Button>
@@ -117,7 +203,18 @@ const Index = () => {
         <section className="pt-32 pb-20 px-6">
           <div className="container mx-auto">
             <div className="mb-12 text-center">
-              <h2 className="text-5xl font-heading font-bold mb-6">Галерея работ</h2>
+              <div className="flex items-center justify-center gap-4 mb-6">
+                <h2 className="text-5xl font-heading font-bold">Галерея работ</h2>
+                {isAdminMode && (
+                  <Button 
+                    size="icon" 
+                    onClick={() => setShowUploadDialog(true)}
+                    className="glass-strong"
+                  >
+                    <Icon name="Plus" size={20} />
+                  </Button>
+                )}
+              </div>
               <div className="flex gap-3 justify-center flex-wrap">
                 {(['minimalism', 'geometry', 'typography'] as StyleMode[]).map((mode) => (
                   <Button
@@ -131,27 +228,44 @@ const Index = () => {
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
-              {portfolioItems.map((item, index) => (
-                <Card
-                  key={item.id}
-                  className="glass overflow-hidden group cursor-pointer hover:scale-105 transition-transform duration-300"
-                  style={{ animationDelay: `${index * 100}ms` }}
-                >
-                  <div className="aspect-square overflow-hidden">
-                    <img
-                      src={item.image}
-                      alt={item.title}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                    />
-                  </div>
-                  <div className="p-6">
-                    <Badge className="mb-3 glass-strong capitalize">{item.category}</Badge>
-                    <h3 className="text-xl font-heading font-semibold">{item.title}</h3>
-                  </div>
-                </Card>
-              ))}
-            </div>
+            {loading ? (
+              <div className="text-center text-muted-foreground">Загрузка...</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
+                {filteredItems.map((item, index) => (
+                  <Card
+                    key={item.id}
+                    className="glass overflow-hidden group cursor-pointer hover:scale-105 transition-transform duration-300 relative"
+                    style={{ animationDelay: `${index * 100}ms` }}
+                  >
+                    {isAdminMode && (
+                      <Button
+                        size="icon"
+                        variant="destructive"
+                        className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleDelete(item.id)}
+                      >
+                        <Icon name="Trash2" size={16} />
+                      </Button>
+                    )}
+                    <div className="aspect-square overflow-hidden">
+                      <img
+                        src={item.image_url}
+                        alt={item.title}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                      />
+                    </div>
+                    <div className="p-6">
+                      <Badge className="mb-3 glass-strong capitalize">{item.category}</Badge>
+                      <h3 className="text-xl font-heading font-semibold">{item.title}</h3>
+                      {item.description && (
+                        <p className="text-sm text-muted-foreground mt-2">{item.description}</p>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -251,10 +365,77 @@ const Index = () => {
       )}
 
       <div className="fixed bottom-8 right-8 flex flex-col gap-3 z-40">
-        <Button size="icon" className="glass-strong rounded-full w-14 h-14 hover:scale-110 transition-transform animate-float">
+        <Button 
+          size="icon" 
+          className="glass-strong rounded-full w-14 h-14 hover:scale-110 transition-transform animate-float"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
           <Icon name="ArrowUp" size={24} />
         </Button>
       </div>
+
+      <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+        <DialogContent className="glass-strong border-white/20 max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-2xl">Добавить работу</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div>
+              <Label htmlFor="title">Название</Label>
+              <Input
+                id="title"
+                className="glass mt-2"
+                value={uploadForm.title}
+                onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
+                placeholder="Название работы"
+              />
+            </div>
+            <div>
+              <Label htmlFor="category">Категория</Label>
+              <Select 
+                value={uploadForm.category} 
+                onValueChange={(value: StyleMode) => setUploadForm({ ...uploadForm, category: value })}
+              >
+                <SelectTrigger className="glass mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="glass-strong border-white/20">
+                  <SelectItem value="minimalism">Минимализм</SelectItem>
+                  <SelectItem value="geometry">Геометрия</SelectItem>
+                  <SelectItem value="typography">Типография</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="description">Описание (опционально)</Label>
+              <Textarea
+                id="description"
+                className="glass mt-2"
+                value={uploadForm.description}
+                onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
+                placeholder="Краткое описание"
+              />
+            </div>
+            <div>
+              <Label htmlFor="image">Изображение</Label>
+              <Input
+                id="image"
+                type="file"
+                accept="image/*"
+                className="glass mt-2"
+                onChange={handleImageChange}
+              />
+            </div>
+            <Button 
+              className="w-full glass-strong" 
+              onClick={handleUpload}
+            >
+              <Icon name="Upload" size={20} className="mr-2" />
+              Загрузить работу
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
